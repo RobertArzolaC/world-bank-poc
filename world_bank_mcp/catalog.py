@@ -1,14 +1,16 @@
-"""Closed catalog of demo entities and indicators.
+"""Runtime catalog built from validated rules.
 
 The catalog is the single source of truth for what the MCP may query. Tool
 inputs are resolved against it, so no arbitrary World Bank code or URL can
-reach the API.
+reach the API. Catalog data comes from ``rules.yaml``; the invariants that
+must never change stay in code.
 """
 
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 
 from world_bank_mcp.errors import QueryError
 
@@ -30,100 +32,112 @@ class Indicator:
     warnings: tuple[str, ...] = ()
 
 
-ENTITIES: dict[str, Entity] = {
-    "PER": Entity("PER", "Perú", ("peru", "per")),
-    "CHL": Entity("CHL", "Chile", ("chile", "chl")),
-    "COL": Entity("COL", "Colombia", ("colombia", "col")),
-    "USA": Entity(
-        "USA",
-        "Estados Unidos",
-        (
-            "estados unidos",
-            "united states",
-            "united states of america",
-            "usa",
-            "eeuu",
-            "ee uu",
-            "us",
-        ),
-    ),
-    "CHN": Entity("CHN", "China", ("china", "chn")),
-    "WLD": Entity("WLD", "Mundo", ("mundo", "world", "wld"), is_aggregate=True),
-}
+@dataclass(slots=True)
+class Catalog:
+    """Validated entities and indicators with normalized lookup indexes."""
 
-INDICATORS: dict[str, Indicator] = {
-    "SP.POP.TOTL": Indicator(
-        "SP.POP.TOTL",
-        "Población total",
-        "personas",
-        ("poblacion", "poblacion total", "population", "population total"),
-    ),
-    "NY.GDP.MKTP.CD": Indicator(
-        "NY.GDP.MKTP.CD",
-        "PIB nominal",
-        "USD corrientes",
-        ("pib", "pib nominal", "pib total", "gdp", "gdp nominal", "nominal gdp"),
-        (
-            "El PIB nominal está expresado en USD corrientes: no es PIB real ni ajusta "
-            "por inflación.",
-            "Un aumento del PIB nominal no implica por sí solo una mejora del bienestar.",
-        ),
-    ),
-    "NY.GDP.PCAP.CD": Indicator(
-        "NY.GDP.PCAP.CD",
-        "PIB nominal per cápita",
-        "USD corrientes por habitante",
-        ("pib per capita", "pib por habitante", "gdp per capita", "per capita gdp"),
-        (
-            "El PIB per cápita es un promedio económico en USD corrientes por habitante; "
-            "no es PIB real, no ajusta por inflación y no es el salario personal ni el "
-            "ingreso de una persona.",
-        ),
-    ),
-}
+    entities: tuple[Entity, ...]
+    indicators: tuple[Indicator, ...]
+    _entity_index: dict[str, Entity] = field(init=False, repr=False)
+    _indicator_index: dict[str, Indicator] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._entity_index = _build_index(
+            self.entities,
+            lambda entity: (entity.iso3, entity.name, *entity.aliases),
+        )
+        self._indicator_index = _build_index(
+            self.indicators,
+            lambda indicator: (indicator.code, indicator.name, *indicator.aliases),
+        )
+
+    def resolve_entity(self, raw: str) -> Entity:
+        entity = self._entity_index.get(normalize_alias(raw))
+        if entity is None:
+            raise QueryError(
+                f"La entidad {raw!r} no está en el catálogo de la demo. "
+                f"Usa una de: {_summarize(entity.name for entity in self.entities)}."
+            )
+        return entity
+
+    def resolve_indicator(self, raw: str) -> Indicator:
+        indicator = self._indicator_index.get(normalize_alias(raw))
+        if indicator is None:
+            raise QueryError(
+                f"El indicador {raw!r} no está en el catálogo de la demo. "
+                f"Usa uno de: {_summarize(indicator.code for indicator in self.indicators)}."
+            )
+        return indicator
+
+    def to_dict(self) -> dict[str, object]:
+        """Serializable view used by the MCP catalog resource."""
+        return {
+            "entities": [
+                {
+                    "iso3": entity.iso3,
+                    "name": entity.name,
+                    "aliases": list(entity.aliases),
+                    "aggregate": entity.is_aggregate,
+                }
+                for entity in self.entities
+            ],
+            "indicators": [
+                {
+                    "code": indicator.code,
+                    "name": indicator.name,
+                    "unit": indicator.unit,
+                    "aliases": list(indicator.aliases),
+                    "warnings": list(indicator.warnings),
+                }
+                for indicator in self.indicators
+            ],
+        }
 
 
-def _normalize(value: str) -> str:
+def normalize_alias(value: str) -> str:
+    """Casefold, strip accents, remove dots, and collapse whitespace."""
     decomposed = unicodedata.normalize("NFKD", value.strip().casefold())
     without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
     return " ".join(without_marks.replace(".", " ").split())
 
 
-def _build_index(
-    items: dict[str, Entity] | dict[str, Indicator],
-) -> dict[str, Entity | Indicator]:
-    index: dict[str, Entity | Indicator] = {}
-    for item in items.values():
-        if isinstance(item, Entity):
-            candidates = [item.iso3, item.name, *item.aliases]
-        else:
-            candidates = [item.code, item.name, *item.aliases]
-        for candidate in candidates:
-            index[_normalize(candidate)] = item
+def _build_index[T](items: Iterable[T], candidates: Callable[[T], Iterable[str]]) -> dict[str, T]:
+    index: dict[str, T] = {}
+    for item in items:
+        for candidate in candidates(item):
+            index[normalize_alias(candidate)] = item
     return index
 
 
-_ENTITY_INDEX = _build_index(ENTITIES)
-_INDICATOR_INDEX = _build_index(INDICATORS)
+def _summarize(values: Iterable[str], limit: int = 10) -> str:
+    items = list(values)
+    if len(items) <= limit:
+        return ", ".join(items)
+    return f"{', '.join(items[:limit])} y {len(items) - limit} más"
+
+
+_catalog: Catalog | None = None
+
+
+def get_catalog() -> Catalog:
+    """Load the catalog from the configured rules file on first use."""
+    global _catalog
+    if _catalog is None:
+        from world_bank_mcp.config import load_catalog
+
+        _catalog = load_catalog()
+    return _catalog
+
+
+def set_catalog(catalog: Catalog | None) -> None:
+    """Replace the cached catalog, mainly for tests and future reloads."""
+    global _catalog
+    _catalog = catalog
 
 
 def resolve_entity(raw: str) -> Entity:
-    """Resolve an ISO3 code, Spanish/English name, or catalog alias."""
-    entity = _ENTITY_INDEX.get(_normalize(raw))
-    if not isinstance(entity, Entity):
-        raise QueryError(
-            f"La entidad {raw!r} no está en el catálogo de la demo. "
-            "Usa Perú, Chile, Colombia, Estados Unidos, China o Mundo."
-        )
-    return entity
+    return get_catalog().resolve_entity(raw)
 
 
 def resolve_indicator(raw: str) -> Indicator:
-    """Resolve an indicator code, Spanish/English name, or catalog alias."""
-    indicator = _INDICATOR_INDEX.get(_normalize(raw))
-    if not isinstance(indicator, Indicator):
-        raise QueryError(
-            f"El indicador {raw!r} no está en el catálogo de la demo. "
-            "Usa SP.POP.TOTL, NY.GDP.MKTP.CD o NY.GDP.PCAP.CD."
-        )
-    return indicator
+    return get_catalog().resolve_indicator(raw)

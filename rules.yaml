@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=./rules.schema.json
+# Catálogo editable de la PoC. Los límites, las invariantes de comparación y
+# el bloqueo de URLs no se configuran aquí: viven en el código.
+version: 1
+
+entities:
+  - iso3: PER
+    name: Perú
+    aliases: [peru, per]
+  - iso3: CHL
+    name: Chile
+    aliases: [chile, chl]
+  - iso3: COL
+    name: Colombia
+    aliases: [colombia, col]
+  - iso3: USA
+    name: Estados Unidos
+    aliases:
+      - estados unidos
+      - united states
+      - united states of america
+      - usa
+      - eeuu
+      - ee uu
+      - us
+  - iso3: CHN
+    name: China
+    aliases: [china, chn]
+  - iso3: WLD
+    name: Mundo
+    aliases: [mundo, world]
+    aggregate: true
+
+indicators:
+  - code: SP.POP.TOTL
+    name: Población total
+    unit: personas
+    aliases: [poblacion, poblacion total, population, population total]
+  - code: NY.GDP.MKTP.CD
+    name: PIB nominal
+    unit: USD corrientes
+    aliases: [pib, pib nominal, pib total, gdp, gdp nominal, nominal gdp]
+    warnings:
+      - "El PIB nominal está expresado en USD corrientes: no es PIB real ni ajusta por inflación."
+      - "Un aumento del PIB nominal no implica por sí solo una mejora del bienestar."
+  - code: NY.GDP.PCAP.CD
+    name: PIB nominal per cápita
+    unit: USD corrientes por habitante
+    aliases: [pib per capita, pib por habitante, gdp per capita, per capita gdp]
+    warnings:
+      - "El PIB per cápita es un promedio económico en USD corrientes por habitante; no es PIB real, no ajusta por inflación y no es el salario personal ni el ingreso de una persona."

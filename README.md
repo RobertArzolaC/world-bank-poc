@@ -99,13 +99,70 @@ Devuelve ambos valores, la diferencia (`country_a - country_b`) en la misma unid
 fecha de consulta y advertencias. Si falta cualquiera de los dos valores, no se calcula la
 diferencia. `Mundo` no participa en comparaciones; se consulta individualmente.
 
+## Gestionar el catálogo (`rules.yaml`)
+
+El catálogo de entidades e indicadores vive en `rules.yaml`, en la raíz del repositorio.
+Un analista puede añadir países, indicadores, alias, unidades y advertencias sin tocar
+Python. El archivo se valida con Pydantic al arrancar el servidor.
+
+### Qué se puede editar
+
+- `entities`: ISO3, nombre, alias y marca `aggregate`.
+- `indicators`: código, nombre, unidad, alias y advertencias adicionales.
+
+### Qué sigue fijo en código
+
+- Años 1960–actual y rango máximo de 10 años.
+- No sustituir faltantes por cero ni por otro año.
+- Comparar solo el mismo indicador, unidad y año.
+- Rechazar agregados en `compare_countries`, aunque se marquen con `aggregate: true`.
+- Dominio del Banco Mundial, fuente WDI, timeout y tamaño de página.
+- Advertencia de temporalidad y advertencias obligatorias de PIB.
+
+El YAML puede **añadir** advertencias, pero no desactivar las que ya existen en código.
+
+### Validar antes de reiniciar
+
+```bash
+uv run python -m world_bank_mcp.config check
+uv run python -m world_bank_mcp.config check /ruta/a/otro.yaml
+```
+
+Si el archivo tiene un campo desconocido, un ISO3 inválido, un código duplicado o un alias
+que colisiona, el comando sale con código 1 y muestra el archivo y el campo exacto. El
+servidor no arranca con una configuración inválida: falla cerrado en lugar de exponer un
+catálogo parcial.
+
+Para usar otro archivo:
+
+```bash
+WORLD_BANK_RULES_FILE=/ruta/a/otro.yaml uv run python server.py
+```
+
+### Esquema para el editor
+
+```bash
+uv run python -m world_bank_mcp.config schema rules.schema.json
+```
+
+El encabezado de `rules.yaml` referencia ese esquema, así que un editor con soporte YAML
+puede autocompletar campos y marcar errores antes de validar.
+
+### Recarga y contexto
+
+Los esquemas de las herramientas MCP se registran al arrancar. Después de cambiar
+`rules.yaml`, **reinicia el servidor**; no hay recarga en caliente. Para no inflar el
+contexto del agente, las descripciones de las herramientas resumen el catálogo y el
+contenido completo se expone en el recurso MCP `worldbank://catalog`. El catálogo admite
+hasta 50 entidades y 50 indicadores.
+
 ## Reglas implementadas en el servidor
 
-1. **Entradas controladas.** Solo entidades e indicadores del catálogo, años entre 1960 y
-   el actual, rangos de máximo 10 años. Las herramientas no aceptan URLs ni campos libres,
-   y el dominio de la API está fijado en código.
-2. **Comparación equivalente.** Mismo indicador, misma unidad y mismo año. `Mundo` no
-   participa en `compare_countries`.
+1. **Entradas controladas.** Solo entidades e indicadores del catálogo definido en
+   `rules.yaml`, años entre 1960 y el actual, rangos de máximo 10 años. Las herramientas no
+   aceptan URLs ni campos libres, y el dominio de la API está fijado en código.
+2. **Comparación equivalente.** Mismo indicador, misma unidad y mismo año. Cualquier entidad
+   marcada como `aggregate: true` queda fuera de `compare_countries`.
 3. **Datos faltantes.** Los huecos se conservan como `null` y se listan. No se rellenan con
    cero ni con otro año, y no se calcula una comparación incompleta.
 4. **Resultados trazables.** Cada resultado incluye valor, indicador, entidad, año, unidad,
@@ -136,7 +193,7 @@ dato faltante, además del cliente HTTP, la conversión de errores y el protocol
 uv run pytest --cov=world_bank_mcp --cov-report=term-missing
 ```
 
-Estado actual: **49 pruebas, 100% de líneas y ramas** en `world_bank_mcp/`. La configuración
+Estado actual: **76 pruebas, 100% de líneas y ramas** en `world_bank_mcp/`. La configuración
 de cobertura (rama activada y fuente) vive en `pyproject.toml`. Las ramas defensivas del
 cliente HTTP —error de red, JSON inválido, payload truncado, filas malformadas, fechas no
 parseables— están cubiertas porque son las que garantizan reportar el problema sin inventar
@@ -166,19 +223,23 @@ servidor.
 
 ```text
 world_bank_mcp/
-  catalog.py   # entidades, indicadores, unidades y advertencias
+  catalog.py   # catálogo runtime, alias y resolución de entidades
   client.py    # cliente httpx de la API del Banco Mundial
+  config.py    # carga/validación de rules.yaml y CLI check/schema
   constants.py # límites, configuración de la API y textos de advertencia
   errors.py    # errores de dominio
   models.py    # contratos Pydantic de entrada y salida
   rules.py     # validaciones de negocio
-  server.py    # herramientas MCP y arranque stdio
+  server.py    # herramientas MCP, recurso de catálogo y arranque stdio
 server.py      # launcher con ruta absoluta para el agente
+rules.yaml     # catálogo editable por el usuario final
+rules.schema.json # esquema para autocompletado del editor
 tests/         # pruebas con transporte HTTP simulado
 ```
 
-El plan de implementación está en
-`docs/superpowers/plans/2026-11-02-world-bank-mcp.md`.
+Los planes de implementación están en
+`docs/superpowers/plans/2026-11-02-world-bank-mcp.md` y
+`docs/superpowers/plans/2026-11-02-configurable-rules.md`.
 
 ## Versiones usadas
 
@@ -188,6 +249,7 @@ El plan de implementación está en
 | mcp (SDK oficial) | 2.3.0 |
 | pydantic | 2.14.2 |
 | httpx | 0.28.1 |
+| PyYAML | 6.0.3 |
 | pytest | 9.2.0 |
 | ruff | 0.17.3 |
 
@@ -199,6 +261,9 @@ punto de entrada sigue siendo `mcp.run()`, que usa stdio por defecto.
 - **Qué funcionó.** El SDK oficial resolvió el transporte stdio y los esquemas tipados sin
   configuración extra. Pydantic permitió validar rangos y comparaciones antes de cualquier
   llamada HTTP, y `httpx.MockTransport` hizo las pruebas rápidas y deterministas.
+- **Reglas editables.** `rules.yaml` + validación Pydantic + el comando `check` permiten que
+  un analista cambie el catálogo o las advertencias sin tocar Python. Para un usuario no
+  técnico, el siguiente paso sería un formulario que genere y valide ese YAML.
 - **Qué falló / qué evitar.** `fastapi_mcp` solo expone HTTP/SSE, no stdio, así que no
   encaja con el camino recomendado por el documento. La API del Banco Mundial devuelve
   errores con HTTP 200 y un objeto `message`, y devuelve `null` para años sin dato: ambos

@@ -7,3 +7,7 @@ class QueryError(ValueError):
 
 class WorldBankAPIError(RuntimeError):
     """The World Bank API failed or returned a response the PoC cannot trust."""
+
+
+class RulesConfigError(ValueError):
+    """The user-managed rules file is missing, malformed, or semantically invalid."""

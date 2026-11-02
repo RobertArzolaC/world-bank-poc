@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -42,6 +43,14 @@ async def test_protocol_lists_tools_and_returns_a_structured_series(monkeypatch)
                 tools = await session.list_tools()
                 names = {tool.name for tool in tools.tools}
                 assert {"get_indicator_series", "compare_countries"} <= names
+
+                resources = await session.list_resources()
+                assert "worldbank://catalog" in {
+                    str(resource.uri) for resource in resources.resources
+                }
+                catalog_resource = await session.read_resource("worldbank://catalog")
+                catalog_payload = json.loads(catalog_resource.contents[0].text)
+                assert len(catalog_payload["entities"]) == 6
 
                 result = await session.call_tool(
                     "get_indicator_series",

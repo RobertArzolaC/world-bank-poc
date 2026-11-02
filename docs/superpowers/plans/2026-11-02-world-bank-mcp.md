@@ -10,9 +10,9 @@
 
 **Spec:** `docs/summary.pdf` (PoC Python para consultar el Banco Mundial con MCP).
 
-**Status:** Implemented on 2026-11-02. Quality gate: 49 tests passing, 100% line and
-branch coverage, `ruff check` and `ruff format --check` clean, plus a live stdio handshake
-against the public API.
+**Status:** Implemented on 2026-11-02. The suite now has 76 tests with 100% line and
+branch coverage; it includes the configurable rules layer (`rules.yaml`, validation, CLI,
+and the `worldbank://catalog` resource).
 
 ## Global Constraints
 

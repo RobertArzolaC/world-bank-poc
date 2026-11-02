@@ -18,6 +18,10 @@ SOURCE_LABEL = "Banco Mundial — World Development Indicators (source=2)"
 DEFAULT_TIMEOUT_SECONDS = 15.0
 PER_PAGE = 200
 
+# Context-safety caps for the user-managed catalog.
+MAX_CATALOG_ENTITIES = 50
+MAX_CATALOG_INDICATORS = 50
+
 # Warning text attached to results.
 TEMPORALITY_WARNING = (
     "Los valores corresponden a la serie disponible hoy; no reconstruyen qué información "

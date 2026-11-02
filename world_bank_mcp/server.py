@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from typing import Annotated
@@ -12,7 +13,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field, ValidationError
 
 from world_bank_mcp import __version__
-from world_bank_mcp.catalog import ENTITIES, INDICATORS
+from world_bank_mcp.catalog import Catalog, get_catalog
 from world_bank_mcp.constants import MAX_RANGE_YEARS, MAX_YEAR, MIN_YEAR, SOURCE_LABEL
 from world_bank_mcp.errors import QueryError, WorldBankAPIError
 from world_bank_mcp.models import ComparisonQuery, ComparisonResult, SeriesQuery, SeriesResult
@@ -21,12 +22,25 @@ from world_bank_mcp.service import get_indicator_series as get_indicator_series_
 
 logger = logging.getLogger(__name__)
 
-ENTITY_LIST = ", ".join(entity.name for entity in ENTITIES.values())
-COUNTRY_LIST = ", ".join(entity.name for entity in ENTITIES.values() if not entity.is_aggregate)
-INDICATOR_LIST = ", ".join(
-    f"{indicator.code} ({indicator.name}, {indicator.unit})" for indicator in INDICATORS.values()
+DESCRIPTION_LIST_LIMIT = 10
+CATALOG: Catalog = get_catalog()
+
+
+def _summarize(values: list[str], limit: int = DESCRIPTION_LIST_LIMIT) -> str:
+    if len(values) <= limit:
+        return ", ".join(values)
+    remaining = len(values) - limit
+    return (
+        f"{', '.join(values[:limit])} y {remaining} más (consulta el recurso worldbank://catalog)"
+    )
+
+
+ENTITY_LIST = _summarize([entity.name for entity in CATALOG.entities])
+COUNTRY_LIST = _summarize([entity.name for entity in CATALOG.entities if not entity.is_aggregate])
+INDICATOR_LIST = _summarize(
+    [f"{indicator.code} ({indicator.name}, {indicator.unit})" for indicator in CATALOG.indicators]
 )
-INDICATOR_CODES = ", ".join(INDICATORS)
+INDICATOR_CODES = _summarize([indicator.code for indicator in CATALOG.indicators])
 
 SERIES_DESCRIPTION = f"""\
 Devuelve la serie de un indicador del Banco Mundial para una sola entidad.
@@ -40,19 +54,21 @@ Los años sin dato se devuelven como null y se listan en missing_years: nunca se
 sustituyen por cero ni por otro año. Los valores son la serie disponible hoy, no
 una reconstrucción de lo que se conocía en una fecha pasada. Incluye valor,
 indicador, entidad, año, unidad, fuente, fecha de consulta y advertencias.
+El catálogo completo está en el recurso worldbank://catalog.
 """
 
 COMPARISON_DESCRIPTION = f"""\
 Compara el mismo indicador y el mismo año para dos países distintos.
 
-Países permitidos: {COUNTRY_LIST}. Mundo no puede participar en una comparación;
-consulta Mundo individualmente con get_indicator_series. Indicadores permitidos:
-{INDICATOR_LIST} (fuente WDI, source=2). El año debe estar entre {MIN_YEAR} y
-{MAX_YEAR}.
+Países permitidos: {COUNTRY_LIST}. Los agregados no pueden participar en una
+comparación; consúltalos individualmente con get_indicator_series. Indicadores
+permitidos: {INDICATOR_LIST} (fuente WDI, source=2). El año debe estar entre
+{MIN_YEAR} y {MAX_YEAR}.
 
 Si falta cualquiera de los dos valores, no se calcula la diferencia y se informa
 el faltante. Devuelve ambos valores, la diferencia en la misma unidad, la fuente,
 la fecha de consulta y las advertencias de interpretación.
+El catálogo completo está en el recurso worldbank://catalog.
 """
 
 READ_ONLY_TOOL = ToolAnnotations(
@@ -75,6 +91,22 @@ mcp = MCPServer(
         f"hoy. Fuente: {SOURCE_LABEL}."
     ),
 )
+
+
+@mcp.resource(
+    "worldbank://catalog",
+    name="Catálogo del Banco Mundial",
+    description="Entidades, indicadores, alias, unidades y advertencias del catálogo validado.",
+    mime_type="application/json",
+)
+def catalog_resource() -> str:
+    payload = get_catalog().to_dict()
+    payload["limits"] = {
+        "min_year": MIN_YEAR,
+        "max_year": MAX_YEAR,
+        "max_range_years": MAX_RANGE_YEARS,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 @mcp.tool(title="Serie de un indicador", description=SERIES_DESCRIPTION, annotations=READ_ONLY_TOOL)

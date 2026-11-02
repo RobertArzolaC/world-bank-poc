@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "EntityConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "iso3": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Iso3",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "aggregate": {
+          "default": false,
+          "title": "Aggregate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "iso3",
+        "name"
+      ],
+      "title": "EntityConfig",
+      "type": "object"
+    },
+    "IndicatorConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z0-9][A-Z0-9.]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "unit"
+      ],
+      "title": "IndicatorConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/EntityConfig"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Entities",
+      "type": "array"
+    },
+    "indicators": {
+      "items": {
+        "$ref": "#/$defs/IndicatorConfig"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Indicators",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version",
+    "entities",
+    "indicators"
+  ],
+  "title": "RulesConfig",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
