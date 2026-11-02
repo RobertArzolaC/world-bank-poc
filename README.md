@@ -259,16 +259,23 @@ punto de entrada sigue siendo `mcp.run()`, que usa stdio por defecto.
 ## Nota de aprendizaje
 
 - **Qué funcionó.** El SDK oficial resolvió el transporte stdio y los esquemas tipados sin
-  configuración extra. Pydantic permitió validar rangos y comparaciones antes de cualquier
-  llamada HTTP, y `httpx.MockTransport` hizo las pruebas rápidas y deterministas.
+  configuración extra. Pydantic validó tanto las consultas como `rules.yaml` antes de
+  cualquier llamada HTTP, y `httpx.MockTransport` hizo las pruebas rápidas y deterministas.
 - **Reglas editables.** `rules.yaml` + validación Pydantic + el comando `check` permiten que
-  un analista cambie el catálogo o las advertencias sin tocar Python. Para un usuario no
-  técnico, el siguiente paso sería un formulario que genere y valide ese YAML.
-- **Qué falló / qué evitar.** `fastapi_mcp` solo expone HTTP/SSE, no stdio, así que no
-  encaja con el camino recomendado por el documento. La API del Banco Mundial devuelve
-  errores con HTTP 200 y un objeto `message`, y devuelve `null` para años sin dato: ambos
-  casos hay que tratarlos explícitamente.
-- **Qué cambiaría para Bluefire.** MCP remoto por Streamable HTTP, repositorio de reglas
-  versionado y una Mirror API responsable de datos y permisos. También conviene validar la
-  respuesta final del agente, porque puede combinar datos fuera de las herramientas y
-  llegar a una conclusión incorrecta aunque el MCP haya respondido bien.
+  un analista cambie el catálogo o las advertencias sin tocar Python. La validación falla
+  cerrada: una configuración inválida impide arrancar el servidor en lugar de exponer un
+  catálogo parcial.
+- **Contexto acotado.** Las descripciones de las herramientas resumen el catálogo y el
+  contenido completo vive en el recurso `worldbank://catalog`. Sin esa separación, un
+  catálogo grande habría inflado el contexto del agente.
+- **Qué falló / qué evitar.** `fastapi_mcp` solo expone HTTP/SSE, no stdio, así que no encaja
+  con el camino recomendado por el documento. La API del Banco Mundial devuelve errores con
+  HTTP 200 y un objeto `message`, y devuelve `null` para años sin dato: ambos casos hay que
+  tratarlos explícitamente.
+- **Qué cambiaría para Bluefire.** MCP remoto por Streamable HTTP, reglas con historial,
+  aprobación y validación en CI, y una Mirror API responsable de datos y permisos. También
+  conviene validar la respuesta final del agente, porque puede combinar datos fuera de las
+  herramientas y llegar a una conclusión incorrecta aunque el MCP haya respondido bien.
+- **Limitaciones de la PoC.** Cambiar reglas requiere reiniciar el servidor, porque los
+  esquemas MCP se registran al arrancar, y un usuario no técnico todavía necesita editar
+  YAML. El siguiente paso sería un formulario que genere y valide ese archivo.
